@@ -113,7 +113,7 @@ class PolicyAccounting(object):
         for invoice in self.policy.invoices:
             invoice.delete() # clear out any preexisting invoices 
 
-        billing_schedules = {'Annual': None, 'Semi-Annual': 3, 'Quarterly': 4, 'Monthly': 12}
+        billing_schedules = {'Annual': None, 'Two-Pay': 2, 'Semi-Annual': 3, 'Quarterly': 4, 'Monthly': 12}
 
         invoices = []
         # The initial amount_due for the first invoice 
