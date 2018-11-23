@@ -71,7 +71,7 @@ class Payment(db.Model):
     #column definitions
     id = db.Column(u'id', db.INTEGER(), primary_key=True, nullable=False)
     policy_id = db.Column(u'policy_id', db.INTEGER(), db.ForeignKey('policies.id'), nullable=False)
-    contact_id = db.Column(u'contact_id', db.INTEGER(), db.ForeignKey('contacts.id'), nullable=False)
+    contact_id = db.Column(u'contact_id', db.INTEGER(), db.ForeignKey('contacts.id'))
     amount_paid = db.Column(u'amount_paid', db.INTEGER(), nullable=False)
     transaction_date = db.Column(u'transaction_date', db.DATE(), nullable=False)
 
