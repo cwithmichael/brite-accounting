@@ -81,7 +81,22 @@ class PolicyAccounting(object):
          being paid in full. However, it has not necessarily
          made it to the cancel_date yet.
         """
-        pass
+        if not date_cursor:
+            date_cursor = datetime.now().date()
+        # Filters invoices for all invoices with a passed due date from
+        # the date_cursor parameter 
+        invoices = Invoice.query.filter_by(policy_id=self.policy.id)\
+                                .filter(Invoice.due_date <= date_cursor)\
+                                .filter(Invoice.due_date < Invoice.cancel_date)\
+                                .order_by(Invoice.bill_date)\
+                                .all()
+        for invoice in invoices:
+            if not self.return_account_balance(invoice.due_date):
+                continue
+            else:
+                return True
+        else:
+            return False
 
     def evaluate_cancel(self, date_cursor=None):
         """Determine if the current policy should be canceled."""

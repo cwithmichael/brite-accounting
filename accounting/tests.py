@@ -130,3 +130,54 @@ class TestReturnAccountBalance(unittest.TestCase):
         self.payments.append(pa.make_payment(contact_id=self.policy.named_insured,
                                              date_cursor=invoices[1].bill_date, amount=600))
         self.assertEquals(pa.return_account_balance(date_cursor=invoices[1].bill_date), 0)
+
+class TestEvaluateCancellationPendingDueToNonPay(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.test_agent = Contact('Test Agent', 'Agent')
+        cls.test_insured = Contact('Test Insured', 'Named Insured')
+        db.session.add(cls.test_agent)
+        db.session.add(cls.test_insured)
+        db.session.commit()
+
+        cls.policy = Policy('Test Policy', date(2015, 1, 1), 1200)
+        cls.policy.named_insured = cls.test_insured.id
+        cls.policy.agent = cls.test_agent.id
+        db.session.add(cls.policy)
+        db.session.commit()
+
+    @classmethod
+    def tearDownClass(cls):
+        db.session.delete(cls.test_insured)
+        db.session.delete(cls.test_agent)
+        db.session.delete(cls.policy)
+        db.session.commit()
+
+    def setUp(self):
+        pass
+
+    def tearDown(self):
+        for invoice in self.policy.invoices:
+            db.session.delete(invoice)
+        db.session.commit()
+
+    def test_due_date_not_passed(self):
+        self.policy.billing_schedule = "Monthly"
+        #No invoices currently exist
+        self.assertFalse(self.policy.invoices)
+        #Invoices should be made when the class is initiated
+        pa = PolicyAccounting(self.policy.id)
+        self.assertEquals(len(self.policy.invoices), 12)
+        self.assertEquals(self.policy.invoices[0].amount_due, self.policy.annual_premium/12)
+        self.assertFalse(pa.evaluate_cancellation_pending_due_to_non_pay('2015-01-31'))
+    
+    def test_due_date_passed(self):
+        self.policy.billing_schedule = "Monthly"
+        #No invoices currently exist
+        self.assertFalse(self.policy.invoices)
+        #Invoices should be made when the class is initiated
+        pa = PolicyAccounting(self.policy.id)
+        self.assertEquals(len(self.policy.invoices), 12)
+        self.assertEquals(self.policy.invoices[0].amount_due, self.policy.annual_premium/12)
+        self.assertTrue(pa.evaluate_cancellation_pending_due_to_non_pay('2015-02-12'))
