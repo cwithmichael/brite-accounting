@@ -31,6 +31,7 @@ class PolicyAccounting(object):
         # parameter.
         invoices = Invoice.query.filter_by(policy_id=self.policy.id)\
                                 .filter(Invoice.bill_date <= date_cursor)\
+                                .filter(Invoice.deleted == False)\
                                 .order_by(Invoice.bill_date)\
                                 .all()
         due_now = 0
@@ -88,6 +89,7 @@ class PolicyAccounting(object):
         invoices = Invoice.query.filter_by(policy_id=self.policy.id)\
                                 .filter(Invoice.due_date <= date_cursor)\
                                 .filter(Invoice.due_date < Invoice.cancel_date)\
+                                .filter(Invoice.deleted == False)\
                                 .order_by(Invoice.bill_date)\
                                 .all()
         for invoice in invoices:
@@ -106,6 +108,7 @@ class PolicyAccounting(object):
         # the date provided to the date_cursor parameter
         invoices = Invoice.query.filter_by(policy_id=self.policy.id)\
                                 .filter(Invoice.cancel_date <= date_cursor)\
+                                .filter(Invoice.deleted == False)\
                                 .order_by(Invoice.bill_date)\
                                 .all()
 
@@ -119,6 +122,17 @@ class PolicyAccounting(object):
         else:
             print "THIS POLICY SHOULD NOT CANCEL"
 
+    def change_schedule(self, new_schedule):
+        """Change the billing schedule after policy creation."""
+        billing_schedules = {'Annual': None, 'Two-Pay': 2, 'Semi-Annual': 3, 'Quarterly': 4, 'Monthly': 12}
+        if new_schedule not in billing_schedules: return
+        if self.policy.billing_schedule == new_schedule: return
+        
+        # Find all the invoices for the policy and mark them as deleted
+        db.session.query(Invoice).filter_by(policy_id=self.policy.id).update({"deleted": True})
+        # Change the billing schedule
+        db.session.query(Policy).filter_by(id=self.policy.id).update({"billing_schedule": new_schedule})
+        self.make_invoices()
 
     def make_invoices(self):
         """Create invoices for the policy.
@@ -126,11 +140,14 @@ class PolicyAccounting(object):
         TODO: Improve the DRYness of this method
         """
         for invoice in self.policy.invoices:
-            invoice.delete() # clear out any preexisting invoices 
+            if not invoice.deleted:
+                db.session.delete(invoice) # clear out any preexisting invoices 
 
         billing_schedules = {'Annual': None, 'Two-Pay': 2, 'Semi-Annual': 3, 'Quarterly': 4, 'Monthly': 12}
-
+        billing_months = billing_schedules.get(self.policy.billing_schedule)
         invoices = []
+        total = 0
+
         # The initial amount_due for the first invoice 
         # will be the amount due for the year
         first_invoice = Invoice(self.policy.id,
@@ -145,42 +162,63 @@ class PolicyAccounting(object):
             pass #nothing to do since we only have one invoice that was created above 
         # The insured has chosen to pay twice a year
         elif self.policy.billing_schedule == "Two-Pay":
-            first_invoice.amount_due = first_invoice.amount_due / billing_schedules.get(self.policy.billing_schedule)
-            for i in range(1, billing_schedules.get(self.policy.billing_schedule)):
+            amount_due = self.policy.annual_premium / billing_months # The amount due split evenly
+            first_invoice.amount_due = first_invoice.amount_due / billing_months
+            total += first_invoice.amount_due
+            for i in range(1, billing_months):
                 # The next invoice comes 6 months after the policy goes into effect
                 months_after_eff_date = i*6
                 bill_date = self.policy.effective_date + relativedelta(months=months_after_eff_date)
+                total += amount_due
                 invoice = Invoice(self.policy.id,
                                   bill_date,
                                   bill_date + relativedelta(months=1),
                                   bill_date + relativedelta(months=1, days=14),
-                                  self.policy.annual_premium / billing_schedules.get(self.policy.billing_schedule))
+                                  self.policy.annual_premium / billing_months)
+                # Handle the case of there being an amount left over after splitting the payments
+                # There are other ways to handle this, but this is the approach taken for time's sake
+                if i == billing_months-1 and total != self.policy.annual_premium:
+                    invoice.amount_due += (self.policy.annual_premium - total)
                 invoices.append(invoice)
         # The insured has chosen to pay every 4 months
         elif self.policy.billing_schedule == "Quarterly":
-            first_invoice.amount_due = first_invoice.amount_due / billing_schedules.get(self.policy.billing_schedule)
-            for i in range(1, billing_schedules.get(self.policy.billing_schedule)):
+            amount_due = self.policy.annual_premium / billing_months # The amount due split evenly
+            first_invoice.amount_due = first_invoice.amount_due / billing_months
+            total += first_invoice.amount_due
+            for i in range(1, billing_months):
                 # The invoices come every 3 months after the policy goes into effect
                 months_after_eff_date = i*3
                 bill_date = self.policy.effective_date + relativedelta(months=months_after_eff_date)
+                total += amount_due
                 invoice = Invoice(self.policy.id,
                                   bill_date,
                                   bill_date + relativedelta(months=1),
                                   bill_date + relativedelta(months=1, days=14),
-                                  self.policy.annual_premium / billing_schedules.get(self.policy.billing_schedule))
+                                  self.policy.annual_premium / billing_months)
+                # Handle the case of there being an amount left over after splitting the payments
+                # There are other ways to handle this, but this is the approach taken for time's sake
+                if i == billing_months-1 and total != self.policy.annual_premium:
+                    invoice.amount_due += (self.policy.annual_premium - total)
                 invoices.append(invoice)
         # The insured has chosen to pay once a month
         elif self.policy.billing_schedule == "Monthly":
-            first_invoice.amount_due = first_invoice.amount_due / billing_schedules.get(self.policy.billing_schedule)
-            for i in range(1, billing_schedules.get(self.policy.billing_schedule)):
+            amount_due = self.policy.annual_premium / billing_months # The amount due split evenly
+            first_invoice.amount_due = first_invoice.amount_due / billing_months
+            total += first_invoice.amount_due
+            for i in range(1, billing_months):
                 # The invoices come every month after the policy goes into effect
                 months_after_eff_date = i
                 bill_date = self.policy.effective_date + relativedelta(months=months_after_eff_date)
+                total += amount_due
                 invoice = Invoice(self.policy.id,
                                   bill_date,
                                   bill_date + relativedelta(months=1),
                                   bill_date + relativedelta(months=1, days=14),
-                                  self.policy.annual_premium / billing_schedules.get(self.policy.billing_schedule))
+                                  amount_due)
+                # Handle the case of there being an amount left over after splitting the payments
+                # There are other ways to handle this, but this is the approach taken for time's sake
+                if i == billing_months-1 and total != self.policy.annual_premium:
+                    invoice.amount_due += (self.policy.annual_premium - total)
                 invoices.append(invoice)
         # Received an unknown billing schedule
         else:

@@ -181,3 +181,72 @@ class TestEvaluateCancellationPendingDueToNonPay(unittest.TestCase):
         self.assertEquals(len(self.policy.invoices), 12)
         self.assertEquals(self.policy.invoices[0].amount_due, self.policy.annual_premium/12)
         self.assertTrue(pa.evaluate_cancellation_pending_due_to_non_pay('2015-02-12'))
+
+class TestChangeSchedule(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.test_agent = Contact('Test Agent', 'Agent')
+        cls.test_insured = Contact('Test Insured', 'Named Insured')
+        db.session.add(cls.test_agent)
+        db.session.add(cls.test_insured)
+        db.session.commit()
+
+        cls.policy = Policy('Test Policy', date(2015, 1, 1), 1200)
+        cls.policy.named_insured = cls.test_insured.id
+        cls.policy.agent = cls.test_agent.id
+        db.session.add(cls.policy)
+        db.session.commit()
+
+    @classmethod
+    def tearDownClass(cls):
+        db.session.delete(cls.test_insured)
+        db.session.delete(cls.test_agent)
+        db.session.delete(cls.policy)
+        db.session.commit()
+
+    def setUp(self):
+        pass
+
+    def tearDown(self):
+        for invoice in self.policy.invoices:
+            db.session.delete(invoice)
+        db.session.commit()
+
+    def test_change_schedule_annual_to_monthly(self):
+        self.policy.billing_schedule = "Annual"
+        #No invoices currently exist
+        self.assertFalse(self.policy.invoices)
+        #Invoices should be made when the class is initiated
+        pa = PolicyAccounting(self.policy.id)
+        self.assertEquals(len(self.policy.invoices), 1)
+        self.assertEquals(self.policy.invoices[0].amount_due, self.policy.annual_premium)
+        self.assertEquals(pa.return_account_balance(date_cursor=self.policy.effective_date), 1200)
+
+        pa.change_schedule('Monthly')
+        new_invoices = []
+        for invoice in self.policy.invoices:
+            if not invoice.deleted:
+                new_invoices.append(invoice)
+        self.assertEquals(len(new_invoices), 12)
+        self.assertEquals(new_invoices[0].amount_due, self.policy.annual_premium/12)
+        self.assertEquals(pa.return_account_balance(date_cursor=self.policy.effective_date), 100)
+    
+    def test_change_schedule_monthly_to_annual(self):
+        self.policy.billing_schedule = "Monthly"
+        #No invoices currently exist
+        self.assertFalse(self.policy.invoices)
+        #Invoices should be made when the class is initiated
+        pa = PolicyAccounting(self.policy.id)
+        self.assertEquals(len(self.policy.invoices), 12)
+        self.assertEquals(self.policy.invoices[0].amount_due, self.policy.annual_premium/12)
+        
+        pa.change_schedule('Annual')
+        new_invoices = []
+        for invoice in self.policy.invoices:
+            if not invoice.deleted:
+                new_invoices.append(invoice)
+        self.assertEquals(len(new_invoices), 1)
+        self.assertEquals(new_invoices[0].amount_due, self.policy.annual_premium)
+        self.assertEquals(pa.return_account_balance(date_cursor=self.policy.effective_date), 1200)
+
