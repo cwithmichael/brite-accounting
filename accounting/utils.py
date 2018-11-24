@@ -100,27 +100,43 @@ class PolicyAccounting(object):
         else:
             return False
 
-    def evaluate_cancel(self, date_cursor=None):
+    def evaluate_cancel(self, date_cursor=None, manual_cancellation=False, cancellation_reason=None):
         """Determine if the current policy should be canceled."""
         if not date_cursor:
             date_cursor = datetime.now().date()
-        # Filters invoices for all invoices with a cancel date that has not passed
-        # the date provided to the date_cursor parameter
-        invoices = Invoice.query.filter_by(policy_id=self.policy.id)\
-                                .filter(Invoice.cancel_date <= date_cursor)\
-                                .filter(Invoice.deleted == False)\
-                                .order_by(Invoice.bill_date)\
-                                .all()
-
-        for invoice in invoices:
-            # If there is no balance due, then just continue
-            if not self.return_account_balance(invoice.cancel_date):
-                continue
-            else:
-                print "THIS POLICY SHOULD HAVE CANCELED"
-                break
+        
+        if manual_cancellation:
+            print "THIS POLICY IS GETTING CANCELED"
+            db.session.query(Policy).filter_by(id=self.policy.id).update({"status": "Canceled"})
+            db.session.query(Policy).filter_by(id=self.policy.id)\
+                .update({"cancellation_date": date_cursor})
+            db.session.query(Policy).filter_by(id=self.policy.id)\
+                .update({"cancellation_reason": cancellation_reason})
         else:
-            print "THIS POLICY SHOULD NOT CANCEL"
+            # Filters invoices for all invoices with a cancel date that has not passed
+            # the date provided to the date_cursor parameter
+            invoices = Invoice.query.filter_by(policy_id=self.policy.id)\
+                                    .filter(Invoice.cancel_date <= date_cursor)\
+                                    .filter(Invoice.deleted == False)\
+                                    .order_by(Invoice.bill_date)\
+                                    .all()
+
+            for invoice in invoices:
+                # If there is no balance due, then just continue
+                if not self.return_account_balance(invoice.cancel_date):
+                    continue
+                else:
+                    print "THIS POLICY SHOULD HAVE CANCELED"
+                    db.session.query(Policy).filter_by(id=self.policy.id).update({"status": "Canceled"})
+                    db.session.query(Policy).filter_by(id=self.policy.id)\
+                        .update({"cancellation_date": invoice.cancel_date})
+                    db.session.query(Policy).filter_by(id=self.policy.id)\
+                        .update({"cancellation_reason": "Cancellation Date Reached"})
+                    break
+            else:
+                print "THIS POLICY SHOULD NOT CANCEL"
+        
+        db.session.commit()
 
     def change_schedule(self, new_schedule):
         """Change the billing schedule after policy creation."""

@@ -250,3 +250,59 @@ class TestChangeSchedule(unittest.TestCase):
         self.assertEquals(new_invoices[0].amount_due, self.policy.annual_premium)
         self.assertEquals(pa.return_account_balance(date_cursor=self.policy.effective_date), 1200)
 
+class TestEvaluateCancel(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.test_agent = Contact('Test Agent', 'Agent')
+        cls.test_insured = Contact('Test Insured', 'Named Insured')
+        db.session.add(cls.test_agent)
+        db.session.add(cls.test_insured)
+        db.session.commit()
+
+        cls.policy = Policy('Test Policy', date(2015, 1, 1), 1200)
+        cls.policy.named_insured = cls.test_insured.id
+        cls.policy.agent = cls.test_agent.id
+        db.session.add(cls.policy)
+        db.session.commit()
+
+    @classmethod
+    def tearDownClass(cls):
+        db.session.delete(cls.test_insured)
+        db.session.delete(cls.test_agent)
+        db.session.delete(cls.policy)
+        db.session.commit()
+
+    def setUp(self):
+        self.policy.status = "Active"
+
+    def tearDown(self):
+        for invoice in self.policy.invoices:
+            db.session.delete(invoice)
+        db.session.commit()
+
+    def test_manual_cancellation(self):
+        reason = "Because"
+        self.policy.billing_schedule = "Annual"
+        #No invoices currently exist
+        self.assertFalse(self.policy.invoices)
+        #Invoices should be made when the class is initiated
+        pa = PolicyAccounting(self.policy.id)
+        self.assertEquals(self.policy.status, "Active")
+        pa.evaluate_cancel(date_cursor=None, manual_cancellation=True, cancellation_reason=reason)
+        self.assertEquals(self.policy.status, "Canceled")
+        self.assertEquals(self.policy.cancellation_date, datetime.now().date())
+        self.assertEquals(self.policy.cancellation_reason, reason)
+    
+    def test_auto_cancellation(self):
+        reason = "Cancellation Date Reached"
+        self.policy.billing_schedule = "Monthly"
+        #No invoices currently exist
+        self.assertFalse(self.policy.invoices)
+        #Invoices should be made when the class is initiated
+        pa = PolicyAccounting(self.policy.id)
+        self.assertEquals(self.policy.status, "Active")
+        pa.evaluate_cancel()
+        self.assertEquals(self.policy.status, "Canceled")
+        self.assertEquals(self.policy.cancellation_date, date(2015, 2, 15))
+        self.assertEquals(self.policy.cancellation_reason, reason)
