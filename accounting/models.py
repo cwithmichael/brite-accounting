@@ -64,6 +64,16 @@ class Invoice(db.Model):
         self.cancel_date = cancel_date
         self.amount_due = amount_due
 
+    def serialize(self):
+        return {
+            'id': self.id,
+            'policy_id': self.policy_id,
+            'bill_date': self.bill_date.strftime("%Y-%m-%d"),
+            'due_date': self.due_date.strftime("%Y-%m-%d"),
+            'cancel_date': self.cancel_date.strftime("%Y-%m-%d"),
+            'amount_due': self.amount_due,
+            'deleted': self.deleted
+        }
 
 class Payment(db.Model):
     __tablename__ = 'payments'
